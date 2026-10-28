@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pieza</title>
+<!-- Fuentes locales (npm @fontsource): sin red, el render sale igual siempre.
+     Para otra fuente: npm i @fontsource/<nombre> y su <link> por peso. -->
+<link rel="stylesheet" href="node_modules/@fontsource/anton/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/inter/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/inter/800.css">
+<style>
+  /* --u = 1 px de un diseño de 1080 de ancho: todo escala si cambia el formato */
+  html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; }
+  body { --u: calc(100vw / 1080); background: var(--fondo); color: var(--texto); font-family: Inter, sans-serif; }
+  .capa { position: absolute; inset: 0; }
+  #fondo { background: radial-gradient(120% 80% at 50% 0%, var(--fondo2), var(--fondo) 70%); }
+  .esc { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+         padding: 0 calc(90 * var(--u)); visibility: hidden; }
+  .titular { font-family: Anton, sans-serif; font-size: calc(150 * var(--u)); line-height: .95; text-transform: uppercase; letter-spacing: .01em; }
+  .titular .w { display: inline-block; }
+  .acento { color: var(--acento); }
+  #beat { font-family: Anton, sans-serif; font-size: calc(190 * var(--u)); text-transform: uppercase; }
+  #beatSub { font-size: calc(52 * var(--u)); font-weight: 500; opacity: .8; margin-top: calc(24 * var(--u)); max-width: 16em; }
+  #cta .boton { margin-top: calc(60 * var(--u)); padding: calc(30 * var(--u)) calc(64 * var(--u)); border-radius: 999px;
+                background: var(--acento); color: var(--fondo); font-weight: 800; font-size: calc(48 * var(--u)); }
+  #cta .usuario { margin-top: calc(36 * var(--u)); font-size: calc(40 * var(--u)); font-weight: 500; opacity: .75; }
+  /* subtítulos en la franja segura de abajo; la palabra que suena, en color */
+  #sub { position: absolute; left: 0; right: 0; bottom: calc(420 * var(--u)); text-align: center; padding: 0 calc(80 * var(--u));
+         font-weight: 800; font-size: calc(62 * var(--u)); line-height: 1.15; text-shadow: 0 calc(4 * var(--u)) calc(18 * var(--u)) rgba(0,0,0,.45); }
+  #sub b { color: var(--acento); }
+  #barra { position: absolute; left: 0; bottom: 0; height: calc(10 * var(--u)); background: var(--acento); }
+  /* ?guias: zonas que tapa la interfaz de Instagram/TikTok (250 px arriba, 340 abajo en 1080×1920) */
+  #guias { display: none; pointer-events: none; }
+  .guias #guias { display: block; }
+  #guias i { position: absolute; left: 0; right: 0; background: rgba(255, 0, 80, .28); }
+</style>
+</head>
+<body>
+<div id="fondo" class="capa"></div>
+
+<section id="hook" class="esc"><div class="titular"></div></section>
+<section id="beats" class="esc"><div id="beat"></div><div id="beatSub"></div></section>
+<section id="cta" class="esc">
+  <div class="titular"></div>
+  <div class="boton"></div>
+  <div class="usuario"></div>
+</section>
+
+<div id="sub"></div>
+<div id="barra"></div>
+<div id="fin" class="capa" style="background:var(--fondo);opacity:0"></div>
+<div id="guias" class="capa"><i style="top:0;height:13%"></i><i style="bottom:0;height:17.7%"></i></div>
+
+<script src="out/datos.js"></script>
+<script src="motor/motor.js"></script>
+<script>
+const { k, win, ease, $, $$, css, vis, lerp, subtitulo } = M;
+const V = window.VAR, T = V.textos, D = window.DUR;
+if (location.search.includes("guias")) document.body.classList.add("guias");
+for (const [n, c] of Object.entries(V.colores)) document.body.style.setProperty("--" + n, c);
+
+// *palabra* en los textos de video.json = palabra en color de acento
+const marcar = s => s.replace(/\*(.+?)\*/g, (_, x) => x.split(" ").map(w => `\u0001${w}\u0002`).join(" "))
+  .split(" ").map(w => `<span class="w">${w.replace(/\u0001(.*?)\u0002/g, '<span class="acento">$1</span>')}</span>`).join(" ");
+$("#hook .titular").innerHTML = marcar(T.hook);
+$("#cta .titular").innerHTML = marcar(T.cierre);
+$("#cta .boton").textContent = T.boton;
+$("#cta .usuario").textContent = T.usuario;
+const palabrasHook = $$("#hook .w"), palabrasCta = $$("#cta .titular .w");
+
+// Tiempos: hook arriba de todo (los primeros segundos deciden si la gente se queda),
+// los beats se reparten el medio y el cierre ocupa los últimos 4 s.
+const tHook = V.tiempos?.hook ?? 2.6, tCta = D - (V.tiempos?.cierre ?? 4);
+const nB = T.beats.length, dB = (tCta - tHook) / nB;
+
+window.render = t => {
+  // fondo con un leve movimiento para que nunca quede "congelado"
+  css($("#fondo"), { transform: `scale(${1.08 + 0.04 * Math.sin(t * 0.6)})` });
+
+  // 1 · hook: palabra por palabra, rápido. La primera ya está en el cuadro 0:
+  // el primer cuadro es lo que se ve antes de que arranque (y a veces la portada).
+  const h = $("#hook");
+  vis(h, t < tHook);
+  palabrasHook.forEach((w, i) => {
+    const p = k(t, i * 0.12 - 0.3, i * 0.12 + 0.05, ease.back);
+    const sale = k(t, tHook - 0.25, tHook, ease.in);
+    css(w, { opacity: p * (1 - sale), transform: `translateY(${(1 - p) * 60 + sale * -40}px) scale(${lerp(0.8, 1, p)})` });
+  });
+
+  // 2 · beats: un concepto por golpe
+  const i = Math.floor((t - tHook) / dB);
+  vis($("#beats"), t >= tHook && t < tCta);
+  if (t >= tHook && t < tCta) {
+    const b = T.beats[i], a = tHook + i * dB;
+    $("#beat").textContent = b.titulo;
+    $("#beatSub").textContent = b.texto || "";
+    const e = win(t, a, a + dB, 0.3, 0.2, ease.expo);
+    css($("#beat"), { opacity: e, transform: `scale(${lerp(1.25, 1, k(t, a, a + 0.4, ease.expo))})`, color: i % 2 ? "var(--texto)" : "var(--acento)" });
+    css($("#beatSub"), { opacity: win(t, a + 0.15, a + dB, 0.35, 0.2), transform: `translateY(${(1 - k(t, a + 0.15, a + 0.5)) * 30}px)` });
+  }
+
+  // 3 · cierre con llamada a la acción
+  vis($("#cta"), t >= tCta);
+  palabrasCta.forEach((w, j) => {
+    const p = k(t, tCta + j * 0.1, tCta + j * 0.1 + 0.45, ease.back);
+    css(w, { opacity: p, transform: `translateY(${(1 - p) * 50}px)` });
+  });
+  const pb = k(t, tCta + 0.6, tCta + 1.1, ease.back);
+  css($("#cta .boton"), { opacity: pb, transform: `scale(${lerp(0.6, 1, pb)})` });
+  css($("#cta .usuario"), { opacity: k(t, tCta + 1, tCta + 1.5) * 0.75 });
+  // fundido final al color de fondo: si se repite en loop, no corta seco
+  css($("#fin"), { opacity: k(t, D - 0.35, D, ease.in) });
+
+  // subtítulos (solo si hay voz con palabras) y barra de progreso
+  if (V.palabras.length) subtitulo($("#sub"), t);
+  css($("#barra"), { width: `${(t / D) * 100}%` });
+};
+</script>
+</body>
+</html>

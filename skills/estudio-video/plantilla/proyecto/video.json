@@ -1,0 +1,28 @@
+{
+  "slug": "reel-ejemplo",
+  "titulo": "Reel de ejemplo",
+  "w": 1080, "h": 1920, "fps": 30, "dur": 15,
+  "lufs": -14,
+  "musica": "house",
+  "voz": null,
+  "subtitulos": false,
+  "base": {
+    "colores": { "fondo": "#0d0d12", "fondo2": "#23233a", "texto": "#f5f5f7", "acento": "#ffb020" },
+    "textos": {
+      "hook": "¿Tu negocio se ve *invisible* en redes?",
+      "beats": [
+        { "titulo": "Video", "texto": "Reels que frenan el scroll" },
+        { "titulo": "Diseño", "texto": "Una marca que se reconoce" },
+        { "titulo": "Datos", "texto": "Probamos versiones y nos quedamos con la que funciona" }
+      ],
+      "cierre": "Hablemos *hoy*",
+      "boton": "Escribime por DM",
+      "usuario": "@tuusuario"
+    }
+  },
+  "variantes": {
+    "A": { "nota": "Hook con pregunta (control)" },
+    "B": { "nota": "Hook con dato concreto", "textos": { "hook": "El *80 %* pasa de largo en 3 segundos" } }
+  },
+  "clips": {}
+}

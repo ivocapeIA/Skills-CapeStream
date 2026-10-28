@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pieza shader</title>
+<!-- Base visual shader (GLSL), costo cero: fondos líquidos, auroras y ondas que
+     se mueven con la música, en los colores de la paleta, con grano de película.
+     Lee de VAR: colores (fondo, fondo2, acento, acento2), shader ("malla" | "liquido" | "ondas"),
+     textos, tiempos. Va sola o como fondo detrás de fotos, clips o un logo. -->
+<link rel="stylesheet" href="node_modules/@fontsource/anton/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/inter/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/inter/800.css">
+<script type="importmap">
+  { "imports": { "three": "./node_modules/three/build/three.module.js" } }
+</script>
+<style>
+  html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; }
+  body { --u: calc(100vw / 1080); background: var(--fondo); color: var(--texto); font-family: Inter, sans-serif; }
+  canvas { position: absolute; inset: 0; }
+  .capa { position: absolute; inset: 0; }
+  .titular { font-family: Anton, sans-serif; text-transform: uppercase; line-height: .95; text-align: center; }
+  .titular .w { display: inline-block; }
+  /* sobre un fondo que se mueve, el acento va como resaltador: se lee aunque pase una mancha del mismo color */
+  .acento { display: inline-block; color: var(--fondo); background: var(--acento); padding: 0 .1em; text-shadow: none; }
+  #hook { position: absolute; left: 0; right: 0; top: 15%; padding: 0 calc(80 * var(--u)); font-size: calc(128 * var(--u));
+          text-shadow: 0 calc(6 * var(--u)) calc(40 * var(--u)) rgba(0,0,0,.45); }
+  #beat { position: absolute; left: 0; right: 0; top: 44%; text-align: center; font-family: Anton, sans-serif; text-transform: uppercase; font-size: calc(170 * var(--u));
+          letter-spacing: .02em; text-shadow: 0 calc(4 * var(--u)) calc(24 * var(--u)) rgba(0,0,0,.5); }
+  #cta { position: absolute; left: 0; right: 0; bottom: 20%; display: flex; flex-direction: column; align-items: center; }
+  #cta .titular { font-size: calc(140 * var(--u)); }
+  #cta .boton { margin-top: calc(44 * var(--u)); padding: calc(28 * var(--u)) calc(60 * var(--u)); border-radius: 999px;
+                background: var(--acento); color: var(--fondo); font-weight: 800; font-size: calc(46 * var(--u)); }
+  #cta .usuario { margin-top: calc(30 * var(--u)); font-size: calc(38 * var(--u)); font-weight: 500; opacity: .8; }
+  #guias { display: none; pointer-events: none; }
+  .guias #guias { display: block; }
+  #guias i { position: absolute; left: 0; right: 0; background: rgba(255, 0, 80, .28); }
+</style>
+</head>
+<body>
+<div id="hook" class="titular"></div>
+<div id="beat"></div>
+<div id="cta"><div class="titular"></div><div class="boton"></div><div class="usuario"></div></div>
+<div id="fin" class="capa" style="background:var(--fondo);opacity:0"></div>
+<div id="guias" class="capa"><i style="top:0;height:13%"></i><i style="bottom:0;height:17.7%"></i></div>
+
+<script src="out/datos.js"></script>
+<script src="motor/motor.js"></script>
+<script type="module">
+import * as THREE from "three";
+import { NOISE } from "./motor/glsl.js";
+// los colores de la paleta se usan tal cual (sin conversión a espacio lineal)
+THREE.ColorManagement.enabled = false;
+
+const { k, win, ease, $, $$, css, lerp, golpe } = M;
+const V = window.VAR, T = V.textos, D = window.DUR, C = V.colores;
+if (location.search.includes("guias")) document.body.classList.add("guias");
+for (const [n, c] of Object.entries(C)) document.body.style.setProperty("--" + n, c);
+const marcar = s => s.replace(/\*(.+?)\*/g, (_, x) => x.split(" ").map(w => `\u0001${w}\u0002`).join(" "))
+  .split(" ").map(w => `<span class="w">${w.replace(/\u0001(.*?)\u0002/g, '<span class="acento">$1</span>')}</span>`).join(" ");
+$("#hook").innerHTML = marcar(T.hook || "");
+$("#cta .titular").innerHTML = marcar(T.cierre || "");
+$("#cta .boton").textContent = T.boton || "";
+$("#cta .usuario").textContent = T.usuario || "";
+const wHook = $$("#hook .w"), wCta = $$("#cta .titular .w");
+
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(W, H);
+document.body.prepend(renderer.domElement);
+const MODOS = { malla: 0, liquido: 1, ondas: 2 };
+const u = {
+  uT: { value: 0 }, uPulso: { value: 0 }, uAsp: { value: W / H }, uModo: { value: MODOS[V.shader || "malla"] ?? 0 },
+  c0: { value: new THREE.Color(C.fondo) }, c1: { value: new THREE.Color(C.fondo2) },
+  c2: { value: new THREE.Color(C.acento) }, c3: { value: new THREE.Color(C.acento2 || C.texto) },
+  uVel: { value: V.velocidad ?? 1 }, uGrano: { value: V.grano ?? 0.035 },
+};
+const plano = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: u,
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }",
+  fragmentShader: `
+    precision highp float;
+    uniform float uT, uPulso, uAsp, uVel, uGrano; uniform int uModo;
+    uniform vec3 c0, c1, c2, c3;
+    varying vec2 vUv;
+    ${NOISE}
+    float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+    void main(){
+      vec2 p = (vUv - .5) * vec2(uAsp, 1.) * 2.;
+      float t = uT * .12 * uVel;
+      vec3 col;
+      if (uModo == 0) {            // malla: degradé de manchas suaves que se desplazan (mesh gradient)
+        p += .18 * vec2(snoise(vec3(p * .6, t)), snoise(vec3(p * .6 + 4., t)));
+        vec3 cs[4]; cs[0] = c1; cs[1] = c3; cs[2] = c2; cs[3] = c2;
+        // cada mancha se pinta encima de la anterior: colores vivos, sin el gris del promedio
+        col = c0;
+        for (int i = 0; i < 4; i++) {
+          float fi = float(i);
+          vec2 cen = vec2(snoise(vec3(fi * 3.1, t * 1.5, 0.)), snoise(vec3(fi * 7.3, t * 1.5, 5.))) * vec2(uAsp, 1.) * .8;
+          float w = exp(-dot(p - cen, p - cen) * (fi == 0. ? 1.2 : 5.5));
+          col = mix(col, cs[i], w * .92);
+        }
+      } else if (uModo == 1) {     // líquido: mármol con deformación de dominio
+        p *= .45;
+        vec2 q = vec2(fbm(vec3(p, t)), fbm(vec3(p + vec2(1.7, 9.2), t)));
+        vec2 r = vec2(fbm(vec3(p + 2.2 * q + vec2(8.3, 2.8), t * 1.4)), fbm(vec3(p + 2.2 * q + vec2(1.2, 5.7), t * 1.4)));
+        float f = fbm(vec3(p + 2.5 * r, t));
+        col = mix(c0, c1, smoothstep(-.5, .6, f));
+        col = mix(col, c2, smoothstep(.25, .9, length(q)));
+        col = mix(col, c3, smoothstep(.1, .7, r.x) * .65);
+        col += c2 * pow(smoothstep(.2, .8, f), 3.) * .35;
+      } else {                     // ondas: líneas de contorno que fluyen
+        p *= .5;
+        float f = fbm(vec3(p, t));
+        float l = abs(fract(f * 4.5 + t * .8) - .5);
+        float linea = smoothstep(.07, .02, l);
+        col = mix(c0, c1, smoothstep(-.6, .8, f) * .8);
+        col = mix(col, mix(c2, c3, smoothstep(-.5, .5, p.y * 2. + f)), linea * .9);
+      }
+      col *= 1. + uPulso * .12;                                         // late con la música
+      col *= 1. - smoothstep(.7, 1.6, length((vUv - .5) * vec2(uAsp, 1.) * 2.)) * .45;   // viñeta
+      col += (hash12(gl_FragCoord.xy + fract(uT * 24.) * 100.) - .5) * uGrano;           // grano
+      gl_FragColor = vec4(col, 1.);
+    }`,
+}));
+const scene = new THREE.Scene(), cam = new THREE.Camera();
+scene.add(plano);
+
+const tHook = V.tiempos?.hook ?? 2.6, tCta = D - (V.tiempos?.cierre ?? 4);
+const beats = T.beats || [], dB = beats.length ? (tCta - tHook) / beats.length : 1;
+const bpm = M.bpm(V.musica);
+
+window.render = t => {
+  u.uT.value = t;
+  u.uPulso.value = golpe(t, bpm);
+  renderer.render(scene, cam);
+
+  wHook.forEach((w, i) => {
+    const p = k(t, i * 0.1 - 0.3, i * 0.1 + 0.1, ease.back), out = k(t, tHook - 0.3, tHook, ease.in);
+    css(w, { opacity: p * (1 - out), transform: `translateY(${(1 - p) * 50 - out * 30}px)` });
+  });
+  const i = Math.floor((t - tHook) / dB), b = beats[i];
+  if (b && t >= tHook && t < tCta) {
+    $("#beat").textContent = b.titulo;
+    const a = tHook + i * dB, e = win(t, a, a + dB, 0.3, 0.25, ease.expo);
+    css($("#beat"), { opacity: e, transform: `scale(${lerp(1.2, 1, e)})`, color: "var(--texto)" });
+  } else css($("#beat"), { opacity: 0 });
+  wCta.forEach((w, j) => {
+    const p = k(t, tCta + 0.3 + j * 0.1, tCta + 0.75 + j * 0.1, ease.back);
+    css(w, { opacity: p, transform: `translateY(${(1 - p) * 50}px)` });
+  });
+  const pb = k(t, tCta + 0.9, tCta + 1.4, ease.back);
+  css($("#cta .boton"), { opacity: pb, transform: `scale(${lerp(0.6, 1, pb)})` });
+  css($("#cta .usuario"), { opacity: k(t, tCta + 1.3, tCta + 1.8) * 0.8 });
+  css($("#fin"), { opacity: k(t, D - 0.35, D, ease.in) });
+};
+</script>
+</body>
+</html>

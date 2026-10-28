@@ -1,0 +1,11 @@
+# Solo se versionan las entregas finales y el código (ver CLAUDE.md del repo).
+# El material (voz, tomas, fotos, logos) queda en la máquina de quien edita.
+material/
+proyecto/out/
+proyecto/node_modules/
+stills/
+*.wav
+*.m4a
+*.mov
+*.aif
+*.aiff

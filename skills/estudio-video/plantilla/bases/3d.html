@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pieza 3D</title>
+<!-- Base visual 3D (Three.js), costo cero: un objeto protagonista que respira al
+     ritmo de la música, satélites en órbita, reflejos de estudio y brillo (bloom).
+     Lee de VAR: colores, forma ("blob" | "nudo" | "anillo"), textos, tiempos. -->
+<link rel="stylesheet" href="node_modules/@fontsource/anton/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/inter/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/inter/800.css">
+<script type="importmap">
+  { "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }
+</script>
+<style>
+  html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; }
+  body { --u: calc(100vw / 1080); background: var(--fondo); color: var(--texto); font-family: Inter, sans-serif; }
+  canvas { position: absolute; inset: 0; }
+  .capa { position: absolute; inset: 0; }
+  .titular { font-family: Anton, sans-serif; text-transform: uppercase; line-height: .95; text-align: center; }
+  .titular .w { display: inline-block; }
+  /* sobre un fondo que se mueve, el acento va como resaltador: se lee aunque pase una mancha del mismo color */
+  .acento { display: inline-block; color: var(--fondo); background: var(--acento); padding: 0 .1em; text-shadow: none; }
+  #hook { position: absolute; left: 0; right: 0; top: 15%; padding: 0 calc(80 * var(--u)); font-size: calc(128 * var(--u));
+          text-shadow: 0 calc(6 * var(--u)) calc(40 * var(--u)) rgba(0,0,0,.45); }
+  #beat { position: absolute; left: 0; right: 0; bottom: 22%; text-align: center; font-weight: 800; font-size: calc(84 * var(--u));
+          letter-spacing: .02em; text-shadow: 0 calc(4 * var(--u)) calc(24 * var(--u)) rgba(0,0,0,.5); }
+  #cta { position: absolute; left: 0; right: 0; bottom: 20%; display: flex; flex-direction: column; align-items: center; }
+  #cta .titular { font-size: calc(140 * var(--u)); }
+  #cta .boton { margin-top: calc(44 * var(--u)); padding: calc(28 * var(--u)) calc(60 * var(--u)); border-radius: 999px;
+                background: var(--acento); color: var(--fondo); font-weight: 800; font-size: calc(46 * var(--u)); }
+  #cta .usuario { margin-top: calc(30 * var(--u)); font-size: calc(38 * var(--u)); font-weight: 500; opacity: .8; }
+  #guias { display: none; pointer-events: none; }
+  .guias #guias { display: block; }
+  #guias i { position: absolute; left: 0; right: 0; background: rgba(255, 0, 80, .28); }
+</style>
+</head>
+<body>
+<div id="hook" class="titular"></div>
+<div id="beat"></div>
+<div id="cta"><div class="titular"></div><div class="boton"></div><div class="usuario"></div></div>
+<div id="fin" class="capa" style="background:var(--fondo);opacity:0"></div>
+<div id="guias" class="capa"><i style="top:0;height:13%"></i><i style="bottom:0;height:17.7%"></i></div>
+
+<script src="out/datos.js"></script>
+<script src="motor/motor.js"></script>
+<script type="module">
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { NOISE } from "./motor/glsl.js";
+
+const { k, win, ease, $, $$, css, lerp, hash, golpe } = M;
+const V = window.VAR, T = V.textos, D = window.DUR, C = V.colores;
+if (location.search.includes("guias")) document.body.classList.add("guias");
+for (const [n, c] of Object.entries(C)) document.body.style.setProperty("--" + n, c);
+const marcar = s => s.replace(/\*(.+?)\*/g, (_, x) => x.split(" ").map(w => `\u0001${w}\u0002`).join(" "))
+  .split(" ").map(w => `<span class="w">${w.replace(/\u0001(.*?)\u0002/g, '<span class="acento">$1</span>')}</span>`).join(" ");
+$("#hook").innerHTML = marcar(T.hook || "");
+$("#cta .titular").innerHTML = marcar(T.cierre || "");
+$("#cta .boton").textContent = T.boton || "";
+$("#cta .usuario").textContent = T.usuario || "";
+const wHook = $$("#hook .w"), wCta = $$("#cta .titular .w");
+
+// ---------------------------------------------------------------- escena
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(W, H);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = V.exposicion ?? 0.85;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(C.fondo);
+scene.fog = new THREE.Fog(C.fondo, 9, 22);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(W > H ? 35 : 42, W / H, 0.1, 100);
+
+// fondo: un plano grande con degradé radial del fondo2 al fondo
+const fondo = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShaderMaterial({
+  uniforms: { a: { value: new THREE.Color(C.fondo2) }, b: { value: new THREE.Color(C.fondo) } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: "uniform vec3 a, b; varying vec2 vUv; void main(){ float d = distance(vUv, vec2(.5, .55)) * 2.4; gl_FragColor = vec4(mix(a, b, smoothstep(0., 1., d)), 1.); }",
+  fog: false,
+}));
+fondo.position.z = -12;
+scene.add(fondo);
+
+// protagonista
+const uni = { uT: { value: 0 }, uAmp: { value: 0.28 } };
+const acento = new THREE.Color(C.acento), acento2 = new THREE.Color(C.acento2 || C.texto);
+const matHeroe = new THREE.MeshPhysicalMaterial({
+  color: acento, metalness: 0.15, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.08,
+  iridescence: 0.55, iridescenceIOR: 1.6, envMapIntensity: 0.9,
+});
+const forma = V.forma || "blob";
+let geo;
+if (forma === "nudo") geo = new THREE.TorusKnotGeometry(1.05, 0.36, 400, 64);
+else if (forma === "anillo") geo = new THREE.TorusGeometry(1.25, 0.42, 96, 256);
+else {
+  geo = new THREE.IcosahedronGeometry(1.45, 48);
+  // el blob se deforma con ruido en la GPU y recalcula sus normales
+  matHeroe.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, uni);
+    sh.vertexShader = "uniform float uT, uAmp;\n" + NOISE + `
+      vec3 deformar(vec3 p){ vec3 n = normalize(p); float f = snoise(n * .85 + vec3(0., 0., uT * .3)) * .75 + snoise(n * 1.9 + uT * .45) * .25; return p + n * f * uAmp; }
+    ` + sh.vertexShader
+      .replace("#include <beginnormal_vertex>", `
+        vec3 pD = deformar(position);
+        vec3 nB = normalize(position);
+        vec3 tg = normalize(cross(nB, abs(nB.y) < .99 ? vec3(0., 1., 0.) : vec3(1., 0., 0.)));
+        vec3 bt = cross(nB, tg);
+        float e = .01;
+        vec3 objectNormal = normalize(cross(deformar(position + tg * e) - pD, deformar(position + bt * e) - pD));
+        #ifdef USE_TANGENT
+          vec3 objectTangent = vec3(tangent.xyz);
+        #endif`)
+      .replace("#include <begin_vertex>", "vec3 transformed = pD;");
+  };
+}
+const heroe = new THREE.Mesh(geo, matHeroe);
+scene.add(heroe);
+
+// satélites: esferas y cubos que orbitan, cada uno con su órbita fija (hash)
+const sats = [];
+const geoS = new THREE.SphereGeometry(1, 48, 24), geoC = new THREE.BoxGeometry(1.4, 1.4, 1.4);
+for (let i = 0; i < (V.satelites ?? 14); i++) {
+  const mat = new THREE.MeshPhysicalMaterial({ color: i % 3 === 0 ? acento : i % 3 === 1 ? acento2 : new THREE.Color(C.texto),
+    metalness: i % 2 ? 0.9 : 0.1, roughness: i % 2 ? 0.25 : 0.12, clearcoat: 1 });
+  const m = new THREE.Mesh(i % 4 === 3 ? geoC : geoS, mat);
+  m.userData = { r: 2.2 + hash(i) * 2.6, v: (0.15 + hash(i + 9) * 0.35) * (hash(i + 3) > 0.5 ? 1 : -1), f: hash(i + 1) * 6.28,
+                 y: (hash(i + 5) - 0.5) * 4.5, s: 0.06 + hash(i + 7) * 0.16 };
+  sats.push(m);
+  scene.add(m);
+}
+
+// luces de color que giran alrededor (los reflejos cambian todo el tiempo)
+const l1 = new THREE.PointLight(acento, 14, 30), l2 = new THREE.PointLight(acento2, 12, 30);
+scene.add(l1, l2, new THREE.AmbientLight(0xffffff, 0.15));
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(W, H), V.brillo ?? 0.3, 0.5, 0.88));
+composer.addPass(new OutputPass());
+
+// ---------------------------------------------------------------- tiempo
+const tHook = V.tiempos?.hook ?? 2.6, tCta = D - (V.tiempos?.cierre ?? 4);
+const beats = T.beats || [], dB = beats.length ? (tCta - tHook) / beats.length : 1;
+const bpm = M.bpm(V.musica);
+// distancia de cámara: en vertical el protagonista ocupa ~60 % del ancho
+const zFin = (V.camara ?? 1) * (W > H ? 7.2 : 10.5);
+
+window.render = t => {
+  const pulso = golpe(t, bpm);                       // 1 en cada golpe de la música y cae rápido
+  const cierre = k(t, tCta - 0.6, tCta + 0.8, ease.inOut);
+  uni.uT.value = t;
+  uni.uAmp.value = 0.2 + 0.08 * pulso;
+  heroe.rotation.set(t * 0.21, t * 0.33, 0);
+  const s = lerp(0.6, 1, k(t, 0, 1.2, ease.expo)) * (1 + 0.035 * pulso) * lerp(1, 0.78, cierre);
+  heroe.scale.setScalar(s);
+  heroe.position.y = lerp(-0.35, 0.95, cierre);
+
+  for (const m of sats) {
+    const u = m.userData, a = u.f + t * u.v;
+    m.position.set(Math.cos(a) * u.r, u.y + Math.sin(t * 0.4 + u.f) * 0.3 + heroe.position.y * 0.5, Math.sin(a) * u.r * 0.7);
+    m.rotation.set(t * 0.7 + u.f, t * 0.5, 0);
+    m.scale.setScalar(u.s * k(t, 0.2 + u.f * 0.08, 0.8 + u.f * 0.08, ease.back));
+  }
+  l1.position.set(Math.cos(t * 0.7) * 5, 3, Math.sin(t * 0.7) * 5);
+  l2.position.set(Math.cos(t * 0.5 + 3) * 5, -2.5, Math.sin(t * 0.5 + 3) * 5);
+
+  // cámara: entra desde lejos y orbita apenas
+  const z = lerp(zFin + 4, zFin, k(t, 0, 2.2, ease.out)) + Math.sin(t * 0.3) * 0.25;
+  camera.position.set(Math.sin(t * 0.15) * 1.2, 0.3 + Math.sin(t * 0.2) * 0.3, z);
+  camera.lookAt(0, heroe.position.y * 0.6, 0);
+  composer.render();
+
+  // textos
+  wHook.forEach((w, i) => {
+    const p = k(t, i * 0.1 - 0.3, i * 0.1 + 0.1, ease.back), out = k(t, tHook - 0.3, tHook, ease.in);
+    css(w, { opacity: p * (1 - out), transform: `translateY(${(1 - p) * 50 - out * 30}px)` });
+  });
+  const i = Math.floor((t - tHook) / dB);
+  const b = beats[i];
+  if (b && t >= tHook && t < tCta) {
+    $("#beat").textContent = b.titulo;
+    const a = tHook + i * dB, e = win(t, a, a + dB, 0.3, 0.25, ease.expo);
+    css($("#beat"), { opacity: e, transform: `translateY(${(1 - e) * 30}px)`, color: i % 2 ? "var(--texto)" : "var(--acento)" });
+  } else css($("#beat"), { opacity: 0 });
+  wCta.forEach((w, j) => {
+    const p = k(t, tCta + 0.3 + j * 0.1, tCta + 0.75 + j * 0.1, ease.back);
+    css(w, { opacity: p, transform: `translateY(${(1 - p) * 50}px)` });
+  });
+  const pb = k(t, tCta + 0.9, tCta + 1.4, ease.back);
+  css($("#cta .boton"), { opacity: pb, transform: `scale(${lerp(0.6, 1, pb)})` });
+  css($("#cta .usuario"), { opacity: k(t, tCta + 1.3, tCta + 1.8) * 0.8 });
+  css($("#fin"), { opacity: k(t, D - 0.35, D, ease.in) });
+};
+</script>
+</body>
+</html>

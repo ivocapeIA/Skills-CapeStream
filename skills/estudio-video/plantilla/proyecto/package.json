@@ -1,0 +1,17 @@
+{
+  "name": "pieza-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "frames": "node frames.mjs",
+    "preview": "node render.mjs --preview",
+    "hoja": "node render.mjs --hoja",
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@fontsource/anton": "^5.2.0",
+    "@fontsource/inter": "^5.2.0",
+    "puppeteer-core": "^24.0.0",
+    "three": "^0.186.0"
+  }
+}
