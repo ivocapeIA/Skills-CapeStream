@@ -18,6 +18,10 @@ Skills de Claude Code hechas para Cape Stream y proyectos relacionados.
 
 Pipeline de libros (Book Genesis v4): copia de `book-genesis-v4/skills`, con sus carpetas `optional/` y `deprecated/`.
 
+## agents-libros/
+
+Los 12 subagentes que usa el pipeline de libros (orchestrator, architect, writer, evaluator, editor, disruptor, packager, researcher, continuity-guardian, dialogue-polish, entity-tracker, hook-craft). Las skills de `skills-libros/` los llaman. Copiarlos a `.claude/agents/`.
+
 ## Uso
 
 Copiar la carpeta de la skill a `.claude/skills/` del proyecto (o a `~/.claude/skills/` para usarla en todos).
