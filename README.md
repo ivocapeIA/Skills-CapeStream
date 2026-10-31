@@ -1,4 +1,4 @@
-﻿# Skills-CapeStream
+# Skills-CapeStream
 
 Skills de Claude Code hechas para Cape Stream y proyectos relacionados.
 
@@ -13,6 +13,7 @@ Skills de Claude Code hechas para Cape Stream y proyectos relacionados.
 | crm-panel-gestion | CRM / panel de gestión multi-tenant | Manager |
 | cartelera-tv-tizen | Cartelería digital para Smart TV Samsung Tizen | carteleria-tv |
 | estudio-video | Videos y animaciones de punta a punta | ~/.claude/skills |
+| higgsfield-ivo | Los 3 métodos de la guía Higgsfield Prompts (fotos y recorrido de propiedades, 3 anuncios a partir de uno, YouTube faceless) ejecutados por el MCP de Higgsfield, en modo calidad o ahorro | ~/.claude/skills |
 
 ## skills-libros/
 
