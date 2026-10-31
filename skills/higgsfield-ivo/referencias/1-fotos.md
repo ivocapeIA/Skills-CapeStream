@@ -4,7 +4,11 @@ Objetivo: que cada foto parezca tomada por un fotógrafo de interiores de revist
 lugar: sin redecorar, sin ordenar, sin restaurar.
 
 ## Entrada
-Carpeta o lista de fotos. Subirlas en una tanda (`media_upload` con `files[]` → PUT → `media_confirm`).
+Carpeta o lista de fotos, o el link de un anuncio de Airbnb (ver `aprendizajes.md`: etiquetas por ambiente y
+`?im_w=2560`). Si son muchas, elegir las importantes: una o dos por ambiente, sin ángulos repetidos, priorizando lo
+que vende (vistas, luz, la cama, el living) y armar una hoja de contactos con ffmpeg para mirarlas juntas.
+Subirlas en una tanda (`media_upload` con `files[]` → PUT de cada una desde un archivo con las URLs → `media_confirm`).
+En exteriores (vistas, atardeceres) sumar al prompt: "Keep the sky colours exactly as in the source".
 
 ## Ejecución
 - Una generación por foto, cada una con su propia foto como `image_references` (nunca varias fotos en un mismo
